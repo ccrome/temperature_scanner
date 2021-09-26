@@ -80,7 +80,7 @@ class Printer:
     def get_position(self):
         done = False
         while not done:
-            self.send("M114")
+            self.send("M114 R")
             line = self.readline()
             if len(line) == 0:
                 time.sleep(0.1)
@@ -143,8 +143,8 @@ class Scanner:
 #print(scanner.positions)
 #exit()
 
-printer = Printer("COM13")
-scanner = Scanner(printer, x0=100, y0=100, width=160, length=57, grid=10, scanning_z=20, safe_z=30)
+printer = Printer("COM13", debug=True)
+scanner = Scanner(printer, x0=10, y0=10, width=100, length=100, grid=20, scanning_z=20, safe_z=30)
 printer.home()
 scanner.goto_start()
 
