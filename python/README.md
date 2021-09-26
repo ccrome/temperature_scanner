@@ -1,6 +1,1 @@
-# Python code for the temperature scanner
-This currently includes 2 scripts:
-
-`post-plotter.py`: plots a previous data log.  Give it a try with `python post-plotter.py temperature-005.log`.
-
-Then, once you have your arduino built up and working, you can plot and log live with `temperature-plot.py`
+33;text-decoration:none;background-position:0 -15px;-webkit-transition:background-position .1s linear;-moz-transition:background-position .1s linear;-o-transition:background-position .1s linear;transition:background-position .1s linear}.slider .slider-handle:focus{outline:#333 dotted thin;outline:-
