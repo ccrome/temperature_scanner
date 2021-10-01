@@ -173,7 +173,9 @@ class GcodePrinter(LineReader):
 
 
 class Scanner:
-    def __init__(self, printer_port, printer_baud, safe_z, scan_z, temp_port, temp_baud):
+    def __init__(self, printer_port, printer_baud, safe_z, scan_z, temp_port, temp_baud, resultsfile):
+        self.results_filename = resultsfile
+        self.results_file = open(resultsfile, "w")
         self.ser = serial.Serial(printer_port, printer_baud, timeout=0.5)
         self.reader_thread = ReaderThread(self.ser, GcodePrinter)
         self.reader_thread.start()
@@ -197,15 +199,22 @@ class Scanner:
         p.goto(z=self.safe_z)
         p.goto(x=start_x, y=start_y)
         p.goto(z=self.scan_z)
+
+        coords = []
         x = start_x
         while x <= start_x + delta_x:
             y = start_y
             while y <= start_y + delta_y:
-                p.goto(x=x, y=y)
-                temperature = self.temp_protocol.temperature()
-                fprint(f"{x:4},{y:4},{temperature}")
+                coords.append((x, y))
                 y += stepsize
             x += stepsize
+
+        for i, (x, y) in enumerate(coords):
+            p.goto(x=x, y=y)
+            temperature = self.temp_protocol.temperature()
+            fprint(f"{i}/{len(coords)}: ({x},{y},{temperature})")
+            self.results_file.write(f"{x},{y},{temperature}\n")
+            self.results_file.flush()
         p.goto(z=self.safe_z)
         p.goto(x=self.present_x, y = self.present_y)
         
@@ -225,6 +234,7 @@ if __name__ == "__main__":
         p.add_argument("-sn", "--scan-z", help="Scan Z during actual scanning. Default=10", type=int, default=10)
         p.add_argument("-tp", "--temp-port", help="Temperature scanner port", required=True)
         p.add_argument("-tb", "--temp-baud", help="Temperature baud", type=int, default=115200)
+        p.add_argument("resultsfile", help="text File to put results into")
         p.add_argument("--logfile", help="name of logfile to dump to.  Default is scanner.log", default="scanner.log")
         args = p.parse_args()
         return args
@@ -233,6 +243,7 @@ if __name__ == "__main__":
     fprint("Starting Scan. Homing")
     logging.basicConfig(filename=args.logfile, encoding='utf-8', level=logging.DEBUG)
     s = Scanner(args.printer_port, args.printer_baud, args.safe_z, args.scan_z,
-                args.temp_port, args.temp_baud)
+                args.temp_port, args.temp_baud, resultsfile=args.resultsfile)
     fprint("Homing complete")
     s.scan(args.start_x, args.start_y, args.delta_x, args.delta_y, args.gridsize)
+    fprint(f"Results in {args.resultsfile}")

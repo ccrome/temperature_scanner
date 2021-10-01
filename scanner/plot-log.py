@@ -2,11 +2,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import argparse
+from matplotlib.animation import FuncAnimation
 
 
 def get_args():
     p = argparse.ArgumentParser("Plot a temperature log output from scan.py")
     p.add_argument("filename", help="Filename of logfile to plot")
+    p.add_argument("-l", "--live", action='store_true', help="Do a live-updating plot, rather than plot once and done.")
     args = p.parse_args()
     return args
 
@@ -33,20 +35,34 @@ def make_heatmap(temps):
     nx=int((maxx-minx)/dx)+1
     ny=int((maxy-miny)/dy)+1
     grid = np.zeros((nx, ny))
+    grid[:,:] = mean
     for x, y, temp in zip(xs, ys, ts):
         xi = int(round((x - minx)/dx))
         yi = int(round((y - miny)/dy))
         grid[xi, yi] = temp
     return grid
 
-def plot(grid):
-    plt.imshow(np.rot90(grid))
+
+
+def animate(i):
+    global args, ax
+    temps = read_temps(args.filename)
+    heatmap = make_heatmap(temps)
+    ax.set_data(np.rot90(heatmap))
+    return ax,
+    
+def plot(args):
+    global ax
+    fig = plt.figure()
+    if args.live:
+        frames = 1000000
+        anim = FuncAnimation(fig, animate, frames=frames, interval=100, blit=True)
+    temps = read_temps(args.filename)
+    heatmap = make_heatmap(temps)
+    ax = plt.imshow(np.rot90(heatmap))
     plt.colorbar()
     plt.show()
-    
-args = get_args()
-temps = read_temps(args.filename)
-heatmap = make_heatmap(temps)
 
-plot(heatmap)
+args = get_args()
+plot(args)
 #print(temps)
