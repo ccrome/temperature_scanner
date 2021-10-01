@@ -5,6 +5,12 @@ from sys import stdout
 import re
 import numpy as np
 
+
+def mprint(*args):
+    print(*args)
+    stdout.flush()
+
+
 def close_enough(x, y, z, a_x, a_y, a_z, tolerance=0.01):
     okay = True
     if x is not None:
@@ -26,30 +32,44 @@ class Printer:
         self.serial = serial.Serial(port, baud)
         self.debug=debug
         self.wait_for_stuff()
+        time.sleep(5)
+        self.feed=30000
+        self.home()
+        self.send([
+            "M82",
+            "M201 X500.00 Y500.00 Z100.00 E5000.00 ;Setup machine max acceleration",
+            "M203 X500.00 Y500.00 Z10.00 E50.00 ;Setup machine max feedrate",
+            "M204 P500.00 R1000.00 T500.00 ;Setup Print/Retract/Travel acceleration",
+            "M205 X8.00 Y8.00 Z0.40 E5.00 ;Setup Jerk",
+            "M220 S100 ;Reset Feedrate",
+            "M221 S100 ;Reset Flowrate",
+            "M501",
+        ])
 
     def readline(self):
         return self.serial.readline().decode('utf-8').strip()
         
     def wait_for_stuff(self, ):
-        print(self.readline())
+        mprint(self.readline())
 
-    def send(self, cmd):
-        cmdstr = f"{cmd}\r\n"
-        if self.debug:
-            print(f'sending {cmdstr}')
-        err = self.serial.write(cmdstr.encode('utf-8'))
-        if self.debug:
-            print(f'results = {err}')
+    def send(self, cmd, interval=0.01):
+        if isinstance(cmd, str):
+            cmd = [cmd]
+        for c in cmd:
+            cmdstr = f"{c}\r\n"
+            if self.debug:
+                mprint(f'sending {cmdstr}')
+            bytes_written = self.serial.write(cmdstr.encode('utf-8'))
+            time.sleep(interval)
 
     def wait_for_ok(self):
         done = False
         while not done:
             line = self.readline()
             if len(line) == 0:
-                time.sleep(0.1)
+                time.sleep(0.01)
             else:
-                print(line)
-                stdout.flush()
+                mprint(line)
                 if line.lower().startswith("ok"):
                     done = True
     
@@ -58,23 +78,23 @@ class Printer:
         self.wait_for_ok()
 
     def goto_xy(self, x, y):
-        self.send(f"G0 X{x} Y{y}")
+        self.send(f"G0 X{x} Y{y} F{self.feed}")
         self.wait_for_position(x=x, y=y)
 
     def goto_xyz(self, x, y, z):
-        self.send(f"G0 X{x} Y{y} Z{z}")
+        self.send(f"G0 X{x} Y{y} Z{z} F{self.feed}")
         self.wait_for_position(x=x, y=y, z=z)
 
     def goto_z(self, z):
-        self.send(f"G0 Z{z}")
+        self.send(f"G0 Z{z} F{self.feed}")
         self.wait_for_position(z=z)
 
     def goto_x(self, x):
-        self.send(f"G0 X{x}")
+        self.send(f"G0 X{x} F{self.feed}")
         self.wait_for_position(x=x)
 
     def goto_y(self, y):
-        self.send(f"G0 Y{Y}")
+        self.send(f"G0 Y{y} F{self.feed}")
         self.wait_for_position(y=y)
 
     def get_position(self):
@@ -83,10 +103,10 @@ class Printer:
             self.send("M114 R")
             line = self.readline()
             if len(line) == 0:
-                time.sleep(0.1)
+                pass
             else:
                 if self.debug:
-                    print(line)
+                    mprint(line)
                 # looking for a line like: X:160.00 Y:190.00 Z:5.00 E:0.00 Count X:12800 Y:15200 Z:2000
                 m = re.match("X:(\d+.\d+) +Y:(\d+.\d+) +Z:(\d+.\d+) +.*$", line)
                 if m:
@@ -94,7 +114,7 @@ class Printer:
                     y = float(m.group(2))
                     z = float(m.group(3))
                     return (x, y, z)
-
+            time.sleep(0.01)
         
     def wait_for_position(self, x=None, y=None, z=None):
         done = False
@@ -127,7 +147,7 @@ class Scanner:
             x += self.grid
             y = self.y0
         
-    def goto_start(self):
+    def start(self):
         self.printer.goto_z(self.safe_z)
         self.printer.goto_xy(self.x0, self.y0)
         self.compute_position_list()
@@ -138,20 +158,35 @@ class Scanner:
         time.sleep(0.25)
         return len(self.positions)
 
+    def scan(self):
+        done = False
+        while not done:
+            togo = self.next()
+            mprint(f"{togo}: {printer.get_position()}")
+            if togo == 0:
+                done = True
+        mprint("Scanning Complete")
+
+    def present(self):
+        mprint("Presenting")
+        self.printer.goto_z(z=self.safe_z)
+        mprint("going to z")
+        self.printer.goto_x(x=0)
+        mprint("going to x")
+        self.printer.goto_y(y=250)
+        mprint("going to y")
+        
+
 #scanner = Scanner(None, x0=100, y0=100, width=160, length=57, grid=10, scanning_z=20, safe_z=30)
 #scanner.compute_position_list()
-#print(scanner.positions)
+#mprint(scanner.positions)
 #exit()
 
-printer = Printer("COM13", debug=True)
-scanner = Scanner(printer, x0=10, y0=10, width=100, length=100, grid=20, scanning_z=20, safe_z=30)
-printer.home()
-scanner.goto_start()
-
-done = False
-while not done:
-    togo = scanner.next()
-    print(f"{togo}: {printer.get_position()}")
-    stdout.flush()
-    if togo == 0:
-        done = True
+mprint("Scanner starting")
+printer = Printer("COM13", debug=False)
+mprint("Got printer")
+scanner = Scanner(printer, x0=40, y0=40, width=10, length=10, grid=4, scanning_z=20, safe_z=30)
+mprint("Starting"); 
+scanner.start()
+scanner.scan()
+scanner.present()
