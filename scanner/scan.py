@@ -1,192 +1,192 @@
-#!/usr/bin/env python3
 import serial
-import time
+from serial.threaded import LineReader, ReaderThread
 from sys import stdout
-import re
+import time
+import traceback
 import numpy as np
+import re
+import threading
+import logging
 
 
-def mprint(*args):
-    print(*args)
+def close_enough(a, b, tolerance=0.01):
+    if a is not None and b is not None and len(a) == 3 and len(b) == 3:
+        a_x, a_y, a_z = a
+        b_x, b_y, b_z = b
+        okay = True
+        if a_x is not None and b_x is not None:
+            if abs(a_x-b_x) > tolerance:
+                okay = False
+        if a_y is not None and b_y is not None:
+            if abs(a_y-b_y) > tolerance:
+                okay = False
+        if a_z is not None and b_z is not None:
+            if abs(a_z-b_z) > tolerance:
+                okay = False
+        return okay
+    else:
+        mprint("not close enough")
+        return False
+
+
+def fprint(*x):
+    print(*x)
     stdout.flush()
-
-
-def close_enough(x, y, z, a_x, a_y, a_z, tolerance=0.01):
-    okay = True
-    if x is not None:
-        if abs(x-a_x) > tolerance:
-            okay = False
-    if y is not None:
-        if abs(y-a_y) > tolerance:
-            okay = False
-    if z is not None:
-        if abs(z-a_z) > tolerance:
-            okay = False
-    return okay
-
-
-class Printer:
-    def __init__(self, port, baud=115200, debug=False):
-        self.port = port
-        self.baud = baud
-        self.serial = serial.Serial(port, baud)
-        self.debug=debug
-        self.wait_for_stuff()
-        time.sleep(5)
-        self.feed=30000
-        self.home()
-        self.send([
-            "M82",
-            "M201 X500.00 Y500.00 Z100.00 E5000.00 ;Setup machine max acceleration",
-            "M203 X500.00 Y500.00 Z10.00 E50.00 ;Setup machine max feedrate",
-            "M204 P500.00 R1000.00 T500.00 ;Setup Print/Retract/Travel acceleration",
-            "M205 X8.00 Y8.00 Z0.40 E5.00 ;Setup Jerk",
-            "M220 S100 ;Reset Feedrate",
-            "M221 S100 ;Reset Flowrate",
-            "M501",
-        ])
-
-    def readline(self):
-        return self.serial.readline().decode('utf-8').strip()
-        
-    def wait_for_stuff(self, ):
-        mprint(self.readline())
-
-    def send(self, cmd, interval=0.01):
-        if isinstance(cmd, str):
-            cmd = [cmd]
-        for c in cmd:
-            cmdstr = f"{c}\r\n"
-            if self.debug:
-                mprint(f'sending {cmdstr}')
-            bytes_written = self.serial.write(cmdstr.encode('utf-8'))
-            time.sleep(interval)
-
-    def wait_for_ok(self):
-        done = False
-        while not done:
-            line = self.readline()
-            if len(line) == 0:
-                time.sleep(0.01)
-            else:
-                mprint(line)
-                if line.lower().startswith("ok"):
-                    done = True
+def mprint(*x):
+    logging.info(*x)
     
-    def home(self):
-        self.send("G28")
-        self.wait_for_ok()
 
-    def goto_xy(self, x, y):
-        self.send(f"G0 X{x} Y{y} F{self.feed}")
-        self.wait_for_position(x=x, y=y)
+STATE_DISCONNECTED          = 1
+STATE_WAITING_FOR_STARTUP   = 2
+STATE_FIRST_MESSAGE_ARRIVED = 3
+STATE_IS_HOMED              = 5
 
-    def goto_xyz(self, x, y, z):
-        self.send(f"G0 X{x} Y{y} Z{z} F{self.feed}")
-        self.wait_for_position(x=x, y=y, z=z)
+class GcodePrinter(LineReader):
+    def connection_made(self, transport):
+        super(GcodePrinter, self).connection_made(transport)
+        self._location = None
+        self.feed = 5000
+        self._state = STATE_WAITING_FOR_STARTUP
+        self._busy = False
+        self.TERMINATOR = b'\n'
 
-    def goto_z(self, z):
-        self.send(f"G0 Z{z} F{self.feed}")
-        self.wait_for_position(z=z)
-
-    def goto_x(self, x):
-        self.send(f"G0 X{x} F{self.feed}")
-        self.wait_for_position(x=x)
-
-    def goto_y(self, y):
-        self.send(f"G0 Y{y} F{self.feed}")
-        self.wait_for_position(y=y)
-
-    def get_position(self):
-        done = False
-        while not done:
-            self.send("M114 R")
-            line = self.readline()
-            if len(line) == 0:
-                pass
-            else:
-                if self.debug:
-                    mprint(line)
-                # looking for a line like: X:160.00 Y:190.00 Z:5.00 E:0.00 Count X:12800 Y:15200 Z:2000
-                m = re.match("X:(\d+.\d+) +Y:(\d+.\d+) +Z:(\d+.\d+) +.*$", line)
-                if m:
-                    x = float(m.group(1))
-                    y = float(m.group(2))
-                    z = float(m.group(3))
-                    return (x, y, z)
-            time.sleep(0.01)
+    def handle_line(self, data):
+        if self._state < STATE_FIRST_MESSAGE_ARRIVED:
+            self._state = STATE_FIRST_MESSAGE_ARRIVED
+        mprint(f'line received "{data}"')
+        self.parse_line(data)
+    
+    def parse_line(self, line):
+        if line.startswith("ok"):
+            self._busy = False
+            if self._state < STATE_IS_HOMED:
+                self._state = STATE_IS_HOMED
         
-    def wait_for_position(self, x=None, y=None, z=None):
-        done = False
-        while not done:
-            actual_x, actual_y, actual_z = self.get_position()
-            if close_enough(x, y, z, actual_x, actual_y, actual_z):
-                done = True
+        m = re.match("X:(\d+.\d+) +Y:(\d+.\d+) +Z:(\d+.\d+) +.*$", line)
+        if m:
+            x = float(m.group(1))
+            y = float(m.group(2))
+            z = float(m.group(3))
+            self._location = np.array((x, y, z))
+
+    def is_homed(self):
+        homed = self._state >= STATE_IS_HOMED
+        logging.debug(homed)
+        return homed
+
+    def connection_lost(self, exc):
+        self._state = STATE_DISCONNECTED
+        print(exc)
+        print('port closed')
+        logging.info("Port Close")
+
+    def is_alive(self):
+        return self._state >= STATE_FIRST_MESSAGE_ARRIVED
+
+    def location(self):
+        return self._location
+
+    def is_dead(self):
+        return self._state == STATE_DISCONNECTED
+
+    def home(self):
+        logging.debug("homing command")
+        print("homing...")
+        self.wait_for_alive()
+        self._busy = True
+        self.write_line("G28")
+        
+        while(self._busy):
+            logging.debug("waiting")
+            time.sleep(0.1)
+    
+
+    def wait_for_close_enough(self, coord, timeout):
+        logging.debug(f"wait_for_close_enough {coord}")
+        start = time.time()
+        while True:
+            self.write_line("M114 R")
+            if close_enough(self.location(), coord):
+                break
+            if (time.time()-start) > timeout:
+                raise Exception("Timed out waitng to get to target.")
+            time.sleep(0.1)
+        
+    def goto(self, x=None, y=None, z=None, wait=True, timeout=10):
+        logging.debug(f"goto {x} {y} {z}")
+        xs = ys = zs = ""
+        if x is not None:
+            xs=f"X{x}"
+        if y is not None:
+            ys=f"Y{y}"
+        if z is not None:
+            zs=f"Z{z}"
+        self.write_line(f"G0 {xs} {ys} {zs} F{self.feed}")
+        if wait:
+            self.wait_for_close_enough((x, y, z), timeout)
+
+    def wait_for_alive(self, timeout = 30):
+        start = time.time()
+        while not self.is_alive():
+            time.sleep(1)
+            if (time.time() - start ) > timeout:
+                raise Exception("Timed out waiting to come alive")
+    
+    def busy(self):
+        return self._busy
+
 
 class Scanner:
-    def __init__(self, printer, x0, y0, width, length, grid, scanning_z, safe_z=30):
-        self.printer = printer
-        self.x0 = x0
-        self.y0 = y0
-        self.x = width
-        self.y = length
-        self.grid = grid
+    def __init__(self, printer_port, printer_baud, safe_z, scan_z):
+        self.ser = serial.Serial(printer_port, printer_baud, timeout=0.5)
+        self.reader_thread = ReaderThread(self.ser, GcodePrinter)
+        self.reader_thread.start()
+        self.protocol = self.reader_thread.protocol
         self.safe_z = safe_z
-        self.scanning_z = scanning_z
+        self.scan_z = scan_z
+        self.present_x = 0
+        self.present_y = 280
+        self.protocol.home()
 
-
-    def compute_position_list(self):
-        x = self.x0
-        y = self.y0
-        z = self.scanning_z
-        self.positions = []
-        while x < self.x+self.x0:
-            while y < self.y+self.y0:
-                self.positions.append((x, y, z))
-                y += self.grid
-            x += self.grid
-            y = self.y0
-        
-    def start(self):
-        self.printer.goto_z(self.safe_z)
-        self.printer.goto_xy(self.x0, self.y0)
-        self.compute_position_list()
-
-    def next(self):
-        x, y, z = self.positions.pop()
-        self.printer.goto_xyz(x, y, z)
-        time.sleep(0.25)
-        return len(self.positions)
-
-    def scan(self):
-        done = False
-        while not done:
-            togo = self.next()
-            mprint(f"{togo}: {printer.get_position()}")
-            if togo == 0:
-                done = True
-        mprint("Scanning Complete")
-
-    def present(self):
-        mprint("Presenting")
-        self.printer.goto_z(z=self.safe_z)
-        mprint("going to z")
-        self.printer.goto_x(x=0)
-        mprint("going to x")
-        self.printer.goto_y(y=250)
-        mprint("going to y")
+    def scan(self, start_x, start_y, delta_x, delta_y, stepsize):
+        fprint("Scanning")
+        p = self.protocol
+        p.goto(z=self.safe_z)
+        p.goto(x=start_x, y=start_y)
+        p.goto(z=self.scan_z)
+        x = start_x
+        while x <= start_x + delta_x:
+            y = start_y
+            while y <= start_y + delta_y:
+                fprint(f"({x:4},{y:4})")
+                p.goto(x=x, y=y)
+                time.sleep(0.2)
+                y += stepsize
+            x += stepsize
+        p.goto(z=self.safe_z)
+        p.goto(x=self.present_x, y = self.present_y)
         
 
-#scanner = Scanner(None, x0=100, y0=100, width=160, length=57, grid=10, scanning_z=20, safe_z=30)
-#scanner.compute_position_list()
-#mprint(scanner.positions)
-#exit()
+if __name__ == "__main__":
+    import argparse
+    def get_args():
+        p = argparse.ArgumentParser()
+        p.add_argument("-pp", "--printer-port", help="Printer port", required=True)
+        p.add_argument("-pb", "--printer-baud", help="Printer Baud.  Default 115200", type=int, default=115200)
+        p.add_argument("-sx", "--start-x", help="Start X location of scan", type=int, required=True)
+        p.add_argument("-sy", "--start-y", help="Start Y location of scan", type=int, required=True)
+        p.add_argument("-dx", "--delta-x", help="The X width of scan", type=int, required=True)
+        p.add_argument("-dy", "--delta-y", help="The Y width of scan", type=int, required=True)
+        p.add_argument("-g",  "--gridsize", help="Scanning grid step", type=int, required=True)
+        p.add_argument("-sz", "--safe-z", help="Safe Z for all moves. Default=45", type=int, default=45)
+        p.add_argument("-sn", "--scan-z", help="Scan Z during actual scanning. Default=10", type=int, default=10)
+        p.add_argument("--logfile", help="name of logfile to dump to.  Default is scanner.log", default="scanner.log")
+        args = p.parse_args()
+        return args
 
-mprint("Scanner starting")
-printer = Printer("COM13", debug=False)
-mprint("Got printer")
-scanner = Scanner(printer, x0=40, y0=40, width=10, length=10, grid=4, scanning_z=20, safe_z=30)
-mprint("Starting"); 
-scanner.start()
-scanner.scan()
-scanner.present()
+    args = get_args()
+    fprint("Starting Scan. Homing")
+    logging.basicConfig(filename=args.logfile, encoding='utf-8', level=logging.DEBUG)
+    s = Scanner(args.printer_port, args.printer_baud, args.safe_z, args.scan_z)
+    fprint("Homing complete")
+    s.scan(args.start_x, args.start_y, args.delta_x, args.delta_y, args.gridsize)
