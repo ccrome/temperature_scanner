@@ -1,1 +1,65 @@
-er:alpha(opacity=25);-moz-opacity:.25;-khtml-opacity:.25;opacity:.25}#drop_overlay #drop_overlay_wrapper .dropzone_background.hover{background-color:#000;filter:alpha(opacity=50);-moz-opacity:.5;-khtml-opacity:.5;opacity:.5}#drop_overlay #drop_overlay_wrapper .dropzone_background.fade{-webkit-transition:all .3s ease-out;-moz-transition:all .3s ease-out;-ms-transition:all .3s ease-out;-o-transition:all .3s ease-out;transition:all .3s ease-out;opacity:1}.center{float:none;margin-left:auto;margin-right:auto}.flipH{-webkit-transform:scaleX(-1);-moz-transform:scaleX(-1);-ms-transform:scaleX(-1);transform:scaleX(-1)}.flipV{-webkit-transform:scaleY(-1);-moz-transform:scaleY(-1);-ms-transform:scaleY(-1);transform:scaleY(-1)}.flipH.flipV{-webkit-transform:scaleX(-1) scaleY(-1);-moz-transform:scaleX(-1) scaleY(-1);-ms-transform:scaleX(-1) scaleY(-1);transform:scaleX(-1) scaleY(-1)}.rotate90{-webkit-transform:rotate(-90deg);transform:rotate(-90deg)}.ui-pnotify a{text-decoration:underline}.btn-mini .caret,.btn-small .caret{margin-top:8px}.dropdown-menu-right{right:0;left:auto}.slider .slider-selection{color:#fff;text-shadow:0 -1px 0 rgba(0,0,0,.25);background-color:#006dcc;background-image:-moz-linear-gradient(top,#08c,#04c);background-image:-webkit-gradient(linear,0 0,0 100%,from(#08c),to(#04c));background-image:-webkit-linear-gradient(top,#08c,#04c);background-image:-o-linear-gradient(top,#08c,#04c);background-image:linear-gradient(to bottom,#08c,#04c);background-repeat:repeat-x;border-color:#04c #04c #002a80;border-color:rgba(0,0,0,.1) rgba(0,0,0,.1) rgba(0,0,0,.25);*background-color:#04c;filter:progid:DXImageTransform.Microsoft.gradient(enabled=false)}.slider .slider-selection.active,.slider .slider-selection.disabled,.slider .slider-selection:active,.slider .slider-selection:focus,.slider .slider-selection:hover,.slider .slider-selection[disabled]{color:#fff;background-color:#04c;*background-color:#003bb3}.slider .slider-selection.active,.slider .slider-selection:active{background-color:#039 \9}.slider.slider-disabled .slider-selection{background-image:none;opacity:.65;filter:alpha(opacity=65);-webkit-box-shadow:none;-moz-box-shadow:none;box-shadow:none}.slider .slider-track{background-color:#f5f5f5;border:1px solid #e3e3e3;-webkit-border-radius:4px;-moz-border-radius:4px;border-radius:4px;-webkit-box-shadow:inset 0 1px 1px rgba(0,0,0,.05);-moz-box-shadow:inset 0 1px 1px rgba(0,0,0,.05);box-shadow:inset 0 1px 1px rgba(0,0,0,.05)}.slider.slider-disabled .slider-track{background-image:none;opacity:.65;filter:alpha(opacity=65);-webkit-box-shadow:none;-moz-box-shadow:none;box-shadow:none}.slider .slider-handle{display:inline-block;*display:inline;*zoom:1;font-size:14px;line-height:20px;text-align:center;vertical-align:middle;cursor:pointer;color:#333;text-shadow:0 1px 1px rgba(255,255,255,.75);background-color:#f5f5f5;background-image:-moz-linear-gradient(top,#fff,#e6e6e6);background-image:-webkit-gradient(linear,0 0,0 100%,from(#fff),to(#e6e6e6));background-image:-webkit-linear-gradient(top,#fff,#e6e6e6);background-image:-o-linear-gradient(top,#fff,#e6e6e6);background-image:linear-gradient(to bottom,#fff,#e6e6e6);background-repeat:repeat-x;*background-color:#e6e6e6;border:1px solid #ccc;*border:0;border-bottom-color:#b3b3b3;-webkit-border-radius:4px;-moz-border-radius:4px;border-radius:4px;*margin-left:.3em;-webk
+# The $11 Infrared Camera
+This project aims to scan a PCB to find shorts and other thermal dissipation issues with the stuff I have lying around.
+
+I've got a short circuit on a PCB, and wanted to find out where it is.  Yes, I should have a thermal camera, but I don't.  So, I started probing it with this [$11 infrared sensor](https://www.harborfreight.com/non-contact-pocket-thermometer-93983.html) from Harbor Freight.   That helped me figure out where the short is, but I figured it'd be nifty to use my 3D printer to scan along the PCB and take a thermal 'picture' pixel by pixel of the PCB. 
+
+I opened up the back of the sensor, and what do you know... under the battery are 4 test points under the battery.  
+
+![Test Points](images/testpoints.jpg)
+
+And opening the back of the case up reveals that those test points are...  Clock, Data, 3V and GND, in that order.
+![Back of thermal sensor](images/battery-contacts.jpg)
+
+I applied 3 volts, and voila!  We get data!
+
+![Data format](images/data-capture.jpg)
+
+There are 4 pins:  Clock, Data, 3V and GND.  Pretty self-explanatory.  To make things easier, I built up a little pogo pin holder to easily interface with the device.    This pogo holder serves two purposes, to hold the pogo pins in place, and do depress the 'measure' button continuously.
+
+![Pogo holder](images/pogo-holder-cad.jpg)
+![Pogo holder](images/pogo-holder1.jpg)
+![Pogo holder](images/pogo-holder2.jpg)
+![Pogo holder](images/pogo-holder3.jpg)
+
+The design files for this holder are in the [3d-files](3d-files) directory.
+
+## Data format
+After searching online for what seemed like forever, but was probably about 30 seconds, I couldn't find any documentation of the data format.  
+
+### Arduino code
+In order to capture the data more easily, I built up a little arduino sketch that will sniff the data (with a lousy but functional software shift-register) and print it out.
+
+The arduino software is in the [arduino-code](arduino-code) directory.  Load this up on 3.3V arduino, whatever kind should work fine, as long as it's 3.3Volts, and you should start getting data spit out to the COM port console that looks like this:
+
+```
+0x0000004c1322810d
+0x0000004c1321800d
+0x0000004c13207f0d
+0x000000530000530d
+0x0000004c13207f0d
+0x000000530000530d
+0x0000006612c9410d
+0x0000004c1321800d
+0x0000004c13207f0d
+0x0000004c131f7e0d
+0x000000530000530d
+0x0000006612c9410d
+0x0000004c131f7e0d
+```
+
+### Python code to read and parse the arduino output
+There is a python library for connecting to the arduino in the [python](python) directory.
+
+After a few hours of plotting bits and scratching my head, It turns the data format is 40-bits.  When bits `[39:32] == 0x4c`, that's a data frame with temperature.  In that data frame, bits `[31:16]` are the temperature.  
+
+Here's a temperature plot of some captured data as i pointed the sensor at a piece of old PCB and heated it up with a hot air gun.  Then took the PCB away, and put it back for a while.
+
+![temperature plot](images/temperature-plot.jpg)
+
+The x-axis is seconds, the Y axis is 'temperature'.  Units TBD.
+
+## Capture program
+This data was captured from the arduino COM port with the temperature-plot.py program, which does a live-updating plot of the temperature returned from the arduino.
+
+# Bring on the 3d printer!
+Now, what remains to be solved, is scanning the sensor across the 3d printer...
