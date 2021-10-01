@@ -1,4 +1,6 @@
 # The $11 Infrared Camera
+![First Scan!](temperature-plot.jpg)
+
 This project aims to scan a PCB to find shorts and other thermal dissipation issues with the stuff I have lying around.
 
 I've got a short circuit on a PCB, and wanted to find out where it is.  Yes, I should have a thermal camera, but I don't.  So, I started probing it with this [$11 infrared sensor](https://www.harborfreight.com/non-contact-pocket-thermometer-93983.html) from Harbor Freight.   That helped me figure out where the short is, but I figured it'd be nifty to use my 3D printer to scan along the PCB and take a thermal 'picture' pixel by pixel of the PCB. 
