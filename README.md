@@ -1,5 +1,5 @@
 # The $11 Infrared Camera
-![First Scan!](temperature-plot.jpg)
+![First Scan!](images/heatmap.jpeg)
 
 This project aims to scan a PCB to find shorts and other thermal dissipation issues with the stuff I have lying around.
 
